@@ -148,12 +148,21 @@ class Todo(models.Model):
         return self.task
 ```
 
+Rode
+
+```
+python manage.py makemigrations
+python manage.py migrate
+```
+
 Esta opção funciona quando você cria dados por fora da aplicação, ou seja, pelo shell do Django.
 
 ```
 python manage.py shell_plus
 
 Todo.objects.create(task='Estudar Django 5.0')
+
+Todo.objects.all().values()
 ```
 
 **Obs:** o `db_default` não aceita referência a outros campos ou modelos. Por exemplo,
@@ -168,6 +177,15 @@ class Product(models.Model):
     discount = models.DecimalField(max_digits=7, decimal_places=2, db_default=F('price') * .9)
 ```
 
+Rode
+
+```
+python manage.py makemigrations
+python manage.py migrate
+```
+
+Erro
+
 ```
 SystemCheckError: System check identified some issues:
 
@@ -175,6 +193,29 @@ ERRORS:
 core.Product.discount: (fields.E012) F(price) * Value(0.9) cannot be used in db_default.
 ```
 
+Comente as linhas
+
+```python
+# from django.db.models import F
+
+
+class Product(models.Model):
+    title = models.CharField(max_length=50)
+    price = models.DecimalField(max_digits=7, decimal_places=2)
+    # discount = models.DecimalField(max_digits=7, decimal_places=2, db_default=F('price') * .9)
+```
+
+Resete o container e as migrações.
+
+```
+docker-compose down -v
+docker-compose up -d
+
+rm -rf backend/core/migrations/
+
+python manage.py makemigrations core
+python manage.py migrate
+```
 
 ### PostgreSQL
 
@@ -188,7 +229,7 @@ SELECT column_name, column_default FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_N
 
 Ou você pode ver isso pelo pgAdmin.
 
-imagem
+![](img/pgadmin_01.png)
 
 
 ## GeneratedField
@@ -200,18 +241,30 @@ https://www.paulox.net/2023/11/24/database-generated-columns-part-2-django-and-p
 
 ```python
 class Travel(models.Model):
-    start_date = models.DatetimeField()
-    end_date = models.DatetimeField()
+    destination = models.CharField(max_length=50)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
 
     def duration(self):
         return self.end_date - self.start_date
 ```
 
+```python
+python manage.py shell_plus
+
+Travel.objects.create(destination='Londres', start_date='2023-12-23 12:30', end_date='2023-12-24 18:45')
+
+travel = Travel.objects.last()
+
+travel.duration()
+datetime.timedelta(days=1, seconds=22500)
+```
+
+
 Ou
 
 
 ```python
-
 class DurationManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().annotate(duration=F('end_date') - F('start_date'))
@@ -231,16 +284,32 @@ class Travel(models.Model):
         return self.destination
 ```
 
+```
+python manage.py makemigrations
+python manage.py migrate
+```
+
 ```python
 python manage.py shell_plus
 
-travel = Travel.objects.first()
+Travel.objects.create(destination='Londres', start_date='2023-12-23 12:30', end_date='2023-12-24 18:45')
+
+travel = Travel.objects.last()
 
 travel.duration
-datetime.timedelta(days=1, seconds=32400)
+datetime.timedelta(days=1, seconds=22500)
 ```
 
-Mas essas duas opções não existem no banco de dados, portanto não pode ser indexado.
+```
+docker container exec -it dicas_de_django_db psql dicas_de_django_db
+
+\dt
+
+SELECT column_name, column_default FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'core_travel';
+```
+
+
+Mas `duration` não existe no banco de dados, portanto não pode ser indexado.
 
 
 ### GeneratedField syntax
@@ -278,7 +347,7 @@ class Travel(models.Model):
 
 Podemos ver pelo pgAdmin
 
-imagem
+![](img/pgadmin_02.png)
 
 ou pelo PostgreSQL
 
@@ -289,6 +358,29 @@ docker container exec -it dicas_de_django_db psql dicas_de_django_db
 
 SELECT column_name, generation_expression, is_generated FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'core_travel';
 ```
+
+```python
+python manage.py shell_plus
+
+Travel.objects.create(destination='Santorini', start_date='2024-01-01 12:30', end_date='2024-01-01 23:55')
+
+travel = Travel.objects.last()
+
+travel.duration
+datetime.timedelta(seconds=41100)
+```
+
+```
+docker container exec -it dicas_de_django_db psql dicas_de_django_db
+
+SELECT destination, duration FROM core_travel;
+```
+
+Podemos ver pelo pgAdmin
+
+![](img/pgadmin_03.png)
+
+
 
 
 ### Exemplo: nome completo
@@ -310,8 +402,12 @@ class Person(models.Model):
         return self.full_name
 ```
 
-
 ```
+python manage.py makemigrations
+python manage.py migrate
+```
+
+```python
 python manage.py shell_plus
 ```
 
@@ -358,6 +454,25 @@ class Person(models.Model):
 
     def __str__(self):
         return self.full_name
+```
+
+
+```
+python manage.py makemigrations
+python manage.py migrate
+```
+
+```python
+python manage.py shell_plus
+```
+
+
+```python
+>>> person = Person.objects.create(first_name='Regis', last_name='Santos')
+>>> person.full_name
+'Regis Santos'
+
+>>> Person.objects.filter(full_name='Regis Santos')
 ```
 
 ### Exemplo: subtotal, vendas
@@ -435,6 +550,8 @@ docker container exec -it dicas_de_django_db psql dicas_de_django_db
 \dt
 
 SELECT column_name, generation_expression, is_generated FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'core_saleitem';
+
+SELECT id, quantity, price, subtotal FROM core_saleitem;
 ```
 
 Agora vamos editar os dados:
@@ -448,16 +565,14 @@ for item in SaleItem.objects.all():
 >>> sale_item
 <SaleItem: 5 - 1 - Morango>
 
+>>> sale_item.quantity, sale_item.price, sale_item.subtotal
+(7, Decimal('0.24'))
+
 >>> sale_item.quantity = 2
 >>> sale_item.save()
 
->>> sale_item.subtotal
-Decimal('0.83')
-
->>> sale_item = SaleItem.objects.first()
-
->>> sale_item.subtotal
-Decimal('1.66')
+>>> sale_item.quantity, sale_item.price, sale_item.subtotal
+Decimal('0.48')
 ```
 
 
@@ -493,11 +608,22 @@ class Winner(models.Model):
         return self.name
 ```
 
+Veja pelo Admin.
+
+```python
+from .models import Winner
+
+admin.site.register(Winner)
+```
+
 ## update_or_create
 
 Tem um novo argumento `create_defaults`.
 
 ```python
+from django.contrib.auth.models import User
+
+
 class Article(models.Model):
     title = models.CharField(max_length=100)
     updated_by = models.ForeignKey(
@@ -535,14 +661,14 @@ Article.objects.update_or_create(
     create_defaults={'created_by': user}
 )
 
-user = User.objects.first()
-
 Article.objects.update_or_create(
     title='Python 3.11.7',
     defaults={'updated_by': user},
     create_defaults={'created_by': user}
 )
 ```
+
+Rode os comandos novamente, e veja (pelo Admin) que `updated_by` também foi preenchido.
 
 ## Django Forms
 
@@ -578,7 +704,7 @@ form_template = Template('{{ form }}')
 print(form_template.render(context))
 ```
 
-Veja o resultado com o help_text
+Veja o resultado com o `help_text`.
 
 Agora se fizermos
 
@@ -588,7 +714,7 @@ field_template = Template('{{ form.name }}')
 print(field_template.render(context))
 ```
 
-Veja o resultado. Cadê o help_text?
+Veja o resultado. Cadê o `help_text`?
 
 ```python
 field_as_field_group = Template('{{ form.name.as_field_group }}')
@@ -672,6 +798,9 @@ Edite `form.html`
 </html>
 ```
 
+Rode a aplicação e veja o resultado.
+
+
 ### Custom field
 
 ```python
@@ -694,7 +823,7 @@ class BasicForm(forms.Form):
             field.widget.attrs['class'] = 'form-control'
 ```
 
-Crie `core/templates/core/custom_field.html`
+Crie `backend/core/templates/core/custom_field.html`
 
 ```html
 {% if field.use_fieldset %}
