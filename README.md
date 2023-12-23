@@ -1,10 +1,10 @@
 # Django 5.0
 
-04/12/2023
-
-O Django 5.0 foi lançado dia 05 de Dezembro de 2023, e ele funciona no Python...
+O [Django 5.0](https://docs.djangoproject.com/en/5.0/releases/5.0/) foi lançado dia 04 de Dezembro de 2023, e ele funciona no Python...
 
 > **Django 5.0:** Python 3.10, 3.11 e 3.12
+
+https://docs.djangoproject.com/en/5.0/releases/5.0/
 
 
 ## Instalação
